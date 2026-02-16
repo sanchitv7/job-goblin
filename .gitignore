@@ -43,3 +43,6 @@ build/
 
 # History
 .history
+
+# Git worktrees
+.worktrees/
