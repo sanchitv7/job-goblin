@@ -1,11 +1,14 @@
 """FastAPI application for agentic recruiter platform."""
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from typing import Dict, Any
+
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -56,6 +59,47 @@ matching_agent = MatchingAgent()
 pitch_writer_agent = PitchWriterAgent()
 outreach_agent = OutreachAgent()
 
+# Registry: job_id -> asyncio.Queue for SSE event delivery
+pipeline_queues: dict[int, asyncio.Queue] = {}
+
+
+async def _emit(job_id: int, event: dict):
+    """Send a pipeline event if a client is listening on this job's SSE stream."""
+    queue = pipeline_queues.get(job_id)
+    if queue:
+        await queue.put(event)
+
+
+@app.get("/api/jobs/{job_id}/pipeline/events")
+async def pipeline_events(job_id: int):
+    """SSE stream: emits structured events as the agent pipeline executes."""
+    queue: asyncio.Queue = asyncio.Queue()
+    pipeline_queues[job_id] = queue
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=120.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("pipeline_complete", "pipeline_error"):
+                    break
+        finally:
+            pipeline_queues.pop(job_id, None)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
 
 async def process_job_pipeline(job_id: int, count: int = 25):
     """Background task: Run sourcing and matching agents in batches."""
@@ -67,15 +111,17 @@ async def process_job_pipeline(job_id: int, count: int = 25):
             return
 
         print(f"Starting pipeline for job {job_id}: {job['title']}")
-        
+        await _emit(job_id, {"type": "pipeline_start", "job_id": job_id, "total": count, "message": f"Starting pipeline for {count} candidates..."})
+
         batch_size = 5
         processed_count = 0
-        
+
         while processed_count < count:
             current_batch_size = min(batch_size, count - processed_count)
             print(f"Processing batch: {current_batch_size} candidates (Total: {processed_count}/{count})...")
 
             # Step 1: Sourcing Agent - Generate candidates (Batch)
+            await _emit(job_id, {"type": "agent_start", "agent": "sourcing", "message": f"Sourcing batch {processed_count+1}–{min(processed_count+current_batch_size, count)} of {count}..."})
             candidates = await sourcing_agent.generate_candidates(job, count=current_batch_size)
             print(f"Generated {len(candidates)} candidates in batch")
 
@@ -97,7 +143,10 @@ async def process_job_pipeline(job_id: int, count: int = 25):
                 )
                 candidate_ids.append(candidate_id)
 
+            await _emit(job_id, {"type": "agent_progress", "agent": "sourcing", "count": processed_count + len(candidates), "total": count, "message": f"Sourced {processed_count + len(candidates)} of {count} candidates"})
+
             # Step 2: Matching Agent - Rank candidates (Batch)
+            await _emit(job_id, {"type": "agent_start", "agent": "matching", "message": f"Ranking {len(candidates)} candidates..."})
             matches = await matching_agent.rank_candidates(job, candidates)
             print(f"Ranked {len(matches)} candidates in batch")
 
@@ -106,7 +155,7 @@ async def process_job_pipeline(job_id: int, count: int = 25):
                 candidate_idx = match['candidate_index']
                 if candidate_idx < 0 or candidate_idx >= len(candidate_ids):
                     continue
-                
+
                 candidate_id = candidate_ids[candidate_idx]
                 await create_match(
                     job_id=job_id,
@@ -117,16 +166,20 @@ async def process_job_pipeline(job_id: int, count: int = 25):
                     rank_position=match['rank_position'] # Rank is relative to batch, but that's fine for now
                 )
 
+            await _emit(job_id, {"type": "agent_complete", "agent": "matching", "count": processed_count + len(candidates), "total": count, "message": f"Matched {len(matches)} candidates in batch"})
+
             # Step 3: Parallel Pre-generation of pitches for top candidates (Score >= 75)
             top_matches = [m for m in matches if m['score'] >= 75]
             if top_matches:
+                await _emit(job_id, {"type": "agent_start", "agent": "pitch_writer", "message": f"Pre-generating pitches for {len(top_matches)} top candidates..."})
+
                 async def generate_and_save_pitch(match_data):
                     idx = match_data['candidate_index']
                     c_id = candidate_ids[idx]
                     c_data = candidates[idx]
                     if isinstance(c_data['skills'], str):
                         c_data['skills'] = json.loads(c_data['skills'])
-                    
+
                     try:
                         pitch = await pitch_writer_agent.create_pitch(job, c_data, match_data)
                         await create_outreach(
@@ -140,18 +193,20 @@ async def process_job_pipeline(job_id: int, count: int = 25):
                         print(f"Error in parallel pitch gen for {c_id}: {e}")
 
                 # Run all top match pitch generations concurrently
-                import asyncio
                 await asyncio.gather(*(generate_and_save_pitch(m) for m in top_matches))
-            
+                await _emit(job_id, {"type": "agent_complete", "agent": "pitch_writer", "count": processed_count + len(candidates), "total": count, "message": f"Pitches ready for {len(top_matches)} top candidates"})
+
             processed_count += len(candidates)
-            
+
             # Small delay to yield control if needed
             await asyncio.sleep(0.1)
 
         print(f"Pipeline complete for job {job_id}")
+        await _emit(job_id, {"type": "pipeline_complete", "job_id": job_id, "total": count, "message": "All candidates ready for review"})
 
     except Exception as e:
         print(f"Error in pipeline for job {job_id}: {e}")
+        await _emit(job_id, {"type": "pipeline_error", "error": str(e), "message": f"Pipeline failed: {str(e)}"})
         import traceback
         traceback.print_exc()
 
