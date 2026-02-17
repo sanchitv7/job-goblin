@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const AppContext = createContext();
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const AppProvider = ({ children }) => {
   const [jobId, setJobId] = useState(null);
@@ -136,20 +136,14 @@ export const AppProvider = ({ children }) => {
     if (!jobId) return;
 
     setLoading(true);
+    setCurrentCandidate(null);
     try {
       await axios.post(`${API_BASE_URL}/api/jobs/${jobId}/source-more`);
-
-      // Poll for new candidates (simple approach)
-      setTimeout(async () => {
-        await fetchNextCandidate();
-      }, 30000); // Wait 30 seconds for generation
-
-      return { message: 'Sourcing new candidates... This may take 30-60 seconds.' };
+      return { message: 'Sourcing new candidates... Watch the pipeline view for progress.' };
     } catch (error) {
       console.error('Error sourcing more candidates:', error);
-      throw error;
-    } finally {
       setLoading(false);
+      throw error;
     }
   };
 

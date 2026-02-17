@@ -4,6 +4,7 @@ import CandidateCard from './CandidateCard';
 import SwipeControls from './SwipeControls';
 import StatsPanel from './StatsPanel';
 import PitchModal from './PitchModal';
+import AgentPipelineView from './AgentPipelineView';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -87,6 +88,7 @@ const RecruiterLoading = ({ totalSourced }) => {
 
 const CandidateSwiper = () => {
   const {
+    jobId,
     currentCandidate,
     stats,
     loading,
@@ -185,7 +187,7 @@ const CandidateSwiper = () => {
   useKeyboardShortcuts(handleReject, handleAccept, loading || showPitch);
 
   if (loading && !currentCandidate) {
-    return <RecruiterLoading totalSourced={stats.total} />;
+    return <AgentPipelineView jobId={jobId} onComplete={fetchNextCandidate} />;
   }
 
   if (!currentCandidate) {
