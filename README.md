@@ -1,165 +1,252 @@
-# 🤖 Agentic Recruiter Platform
+# JOB_GOBLIN
 
-An AI-powered recruiting platform that automates candidate sourcing, matching, personalized outreach, and status tracking with a Tinder-style swipe interface.
+**AI-powered recruiting with a multi-agent pipeline and a swipe UI. Built in ~2 hours at the Granola x DeepMind Hackathon.**
+
+No frameworks. No LangChain. Just four focused AI agents orchestrated sequentially — sourcing, matching, pitching, and outreach — all powered by Google Gemini.
+
+---
+
+## Highlights
+
+- **Multi-Agent Pipeline** — 4 specialized agents communicate via shared database state, not direct messaging
+- **Swipe-to-Hire UI** — Tinder-style candidate review with keyboard shortcuts (arrow keys)
+- **Real-Time SSE Streaming** — Watch agents work live as they source and rank candidates
+- **Structured AI Outputs** — Gemini JSON schema mode eliminates parsing failures
+- **Neobrutalist Design** — Bold colors, thick borders, 4px offset shadows
+- **Personalized Outreach** — AI-generated pitch emails tailored to each candidate
+- **Interactive Stats** — Click any stat to filter and navigate candidates by status
+- **~$0.001 per pipeline run** — Gemini Flash makes it nearly free
+
+---
 
 ## Architecture
 
-### Multi-Agent System (Sequential Pipeline)
+```
+                         JOB_GOBLIN Pipeline
+ ┌─────────────────────────────────────────────────────────┐
+ │                                                         │
+ │   Job Created                                           │
+ │       │                                                 │
+ │       ▼                                                 │
+ │   ┌──────────────┐    ┌──────────────┐                  │
+ │   │   Sourcing   │───▶│   Matching   │                  │
+ │   │    Agent     │    │    Agent     │                  │
+ │   │ (25 profiles)│    │ (0-100 score)│                  │
+ │   └──────────────┘    └──────┬───────┘                  │
+ │                              │                          │
+ │                              ▼                          │
+ │                        ┌──────────┐                     │
+ │                        │ Database │                     │
+ │                        │ (SQLite) │                     │
+ │                        └────┬─────┘                     │
+ │                             │                           │
+ │                             ▼                           │
+ │                     ┌───────────────┐                   │
+ │                     │  Swipe UI     │                   │
+ │                     │  ← Reject     │                   │
+ │                     │  → Accept     │                   │
+ │                     └───────┬───────┘                   │
+ │                             │ Accept                    │
+ │                             ▼                           │
+ │                     ┌──────────────┐                    │
+ │                     │ Pitch Writer │                    │
+ │                     │    Agent     │                    │
+ │                     └──────┬───────┘                    │
+ │                            │                            │
+ │                            ▼                            │
+ │                     ┌──────────────┐                    │
+ │                     │  Outreach    │                    │
+ │                     │    Agent     │                    │
+ │                     └──────────────┘                    │
+ │                                                         │
+ └─────────────────────────────────────────────────────────┘
+```
 
-Four specialized AI agents working together:
+**Why sequential?** Each agent completes before the next starts. Simpler to build, debug, and reason about than orchestrator or parallel patterns.
 
-1. **Sourcing Agent**: Generates 20-25 realistic mock candidate profiles based on job description
-2. **Matching Agent**: Ranks candidates with AI-powered fit scoring (0-100)
-3. **Pitch Writer Agent**: Creates personalized outreach messages
-4. **Outreach Agent**: Sends emails via SMTP
+**Why no framework?** At 25-candidate scale, direct implementation took 20 minutes. Framework setup would have taken 60+. Each agent is just a Python class with a focused prompt and a Gemini API call.
+
+---
 
 ## Tech Stack
 
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | FastAPI, Python async/await, SQLite |
+| **AI** | Google Gemini (`gemini-3-flash-preview`) via `google-genai` SDK |
+| **Frontend** | React 18 + Vite, Tailwind CSS v3, Framer Motion |
+| **Streaming** | Server-Sent Events (SSE) for live pipeline progress |
+| **Design** | Neobrutalist — bold borders, offset shadows, high-contrast palette |
+
+---
+
+## Quick Start
+
+### One Command
+
+```bash
+# 1. Add your Gemini API key
+echo "GEMINI_API_KEY=your_key_here" > backend/.env
+
+# 2. Start everything
+./start.sh
+```
+
+Backend runs at `http://localhost:8000` | Frontend at `http://localhost:5173`
+
+Get a free Gemini API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+
+### Manual Setup
+
 **Backend:**
-- FastAPI (Python async framework)
-- SQLite (zero-setup database)
-- Google Gemini 2.0 Flash (LLM for all agents)
-- SMTP for email delivery
-
-**Frontend:**
-- React + Vite
-- Tailwind CSS
-- React Context for state management
-- Axios for API calls
-
-## Setup Instructions
-
-### Backend Setup
-
-1. Navigate to backend directory:
 ```bash
 cd backend
-```
-
-2. Activate virtual environment (created by uv):
-```bash
+uv sync
 source .venv/bin/activate
-```
-
-3. Add your Google Gemini API key to `.env`:
-```bash
-# Edit backend/.env
-GOOGLE_API_KEY=your_actual_gemini_api_key
-```
-
-To get a Gemini API key:
-- Go to https://aistudio.google.com/apikey
-- Click "Get API Key" or use existing GCP project
-- Copy the API key (starts with "AIza...")
-
-4. Start the backend server:
-```bash
 uvicorn main:app --reload
 ```
 
-Backend will run at `http://localhost:8000`
-
-### Frontend Setup
-
-1. Navigate to frontend directory:
+**Frontend:**
 ```bash
-cd frontend
-```
-
-2. Install dependencies (if not already done):
-```bash
+cd frontend-neo
 npm install
-```
-
-3. Start the development server:
-```bash
 npm run dev
 ```
 
-Frontend will run at `http://localhost:5173`
+---
 
-## Usage
+## SSE Streaming: Live Pipeline Events
 
-1. **Create a Job Posting**
-   - Fill out the job form with title, description, skills, experience level, and location
-   - Click "Create Job & Start Sourcing"
-   - Wait 30-60 seconds for AI agents to generate and rank candidates
+The backend exposes a real-time event stream so the frontend can visualize agent progress as it happens.
 
-2. **Review Candidates**
-   - View candidate profiles with match scores and key highlights
-   - Use keyboard shortcuts:
-     - `←` or `X` to reject
-     - `→` or `Enter` to accept
-   - Or use the on-screen buttons
+**Endpoint:** `GET /api/jobs/{job_id}/pipeline/events`
 
-3. **Accept Candidates**
-   - When you accept a candidate, the Pitch Writer Agent creates a personalized email
-   - The Outreach Agent sends the email (in demo mode, it's logged to console)
-   - View the generated pitch in the modal
+**How it works:**
+1. Client opens an SSE connection when a job is created
+2. Backend emits events as each agent starts, progresses, and completes
+3. Frontend renders a live pipeline visualization — no polling required
 
-4. **Source More Candidates**
-   - Click "Source More Candidates" button to generate a fresh batch (15 new candidates)
-   - Useful when you want more options or different candidate profiles
+```
+event: sourcing_start
+data: {"agent": "sourcing", "status": "running", "message": "Generating candidates..."}
 
-## Features
+event: sourcing_complete
+data: {"agent": "sourcing", "status": "done", "candidates_count": 25}
 
-✅ **Core Flow:**
-- Job description input form
-- Mock candidate generation (20-25 profiles initially)
-- "Source More Candidates" button (generates fresh batch on demand)
-- AI-powered matching with scores (0-100)
-- Flashcard UI with key highlights
-- Accept/reject with buttons and keyboard shortcuts
-- Personalized pitch generation
-- Email sending via SMTP (demo mode logs to console)
-- Stats display
+event: matching_start
+data: {"agent": "matching", "status": "running", "message": "Scoring candidates..."}
 
-✅ **Agentic Behavior:**
-- Each agent makes independent decisions
-- Varied, non-templated outputs
-- Context-aware generation
-- Multi-factor reasoning
+event: matching_complete
+data: {"agent": "matching", "status": "done"}
+```
 
-## API Endpoints
+This replaces the previous "wait 30-60 seconds and hope" experience with live, observable agent activity.
 
-- `POST /api/jobs` - Create job + trigger sourcing pipeline
-- `GET /api/jobs/{job_id}/candidates` - Get next candidate to review
-- `PUT /api/candidates/{id}/accept` - Accept candidate & generate pitch
-- `PUT /api/candidates/{id}/reject` - Reject candidate
-- `GET /api/jobs/{job_id}/stats` - Get review statistics
-- `POST /api/jobs/{job_id}/source-more` - Generate fresh batch of candidates
+---
 
-## Demo Tips
+## API Reference
 
-For best demo experience:
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/jobs` | Create job and trigger agent pipeline |
+| `GET` | `/api/jobs/{job_id}/candidates` | Get next candidate to review |
+| `PUT` | `/api/candidates/{id}/accept` | Accept candidate, generate pitch |
+| `PUT` | `/api/candidates/{id}/reject` | Reject candidate |
+| `GET` | `/api/jobs/{job_id}/stats` | Review statistics |
+| `POST` | `/api/jobs/{job_id}/source-more` | Generate a fresh batch |
+| `GET` | `/api/jobs/{job_id}/pipeline/events` | SSE stream of pipeline progress |
+| `GET` | `/api/jobs/{job_id}/candidates/by-status/{status}` | Filter candidates by status |
 
-1. **Create a realistic job posting** (e.g., "Senior Full-Stack Engineer" with React, Node.js, PostgreSQL, AWS)
-2. **Show the multi-agent system working**:
-   - Point out the sourcing phase (generating diverse candidates)
-   - Highlight the matching scores and reasoning
-   - Accept a candidate to show pitch generation
-3. **Demonstrate "Source More"** - Click it to show agents generating fresh candidates in real-time
-4. **Show keyboard shortcuts** - Fast reviewing with arrow keys
-5. **Display the generated email** - Show how personalized it is
+Full interactive docs available at `http://localhost:8000/docs` when running locally.
 
-## Notes
+---
 
-- Candidates are mock data generated by AI (not real LinkedIn profiles)
-- In demo mode, emails are logged to console instead of actually sent
-- To send real emails, configure SMTP settings in `backend/.env` and uncomment the SMTP code in `agents.py`
-- Database is SQLite file-based (`recruiter.db` in backend directory)
+## The Agent System
 
-## Cost Estimation
+Each agent is a Python class — no base class, no framework, no abstraction layer. Just a prompt, a JSON schema, and a Gemini API call.
 
-With Google Gemini 2.0 Flash:
-- ~$0.02 per 1000 candidates generated
-- With $20 GCP credits, you can run 1000+ iterations
+```python
+class SourcingAgent:
+    def generate_candidates(self, job, count=25):
+        prompt = f"Generate {count} realistic candidates for: {job.title}..."
+        response = get_client().models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type='application/json',
+                response_json_schema=candidate_schema
+            )
+        )
+        return json.loads(response.text)
+```
 
-## Hackathon Value Proposition
+| Agent | Input | Output | Time |
+|-------|-------|--------|------|
+| **Sourcing** | Job description | 25 candidate profiles | 15-30s |
+| **Matching** | Candidates + job | Scores (0-100) + reasoning | 10-20s |
+| **Pitch Writer** | Candidate + job | Personalized outreach email | 3-5s |
+| **Outreach** | Email content | Delivery (SMTP or console log) | <1s |
 
-This project demonstrates:
-- **Clear utility**: Solves real recruiter pain points
-- **Genuine agentic AI**: Multi-agent system with independent decision-making
-- **Technical depth**: Agent orchestration, structured LLM outputs, state management
-- **Product thinking**: Thoughtful UX, keyboard shortcuts, progress tracking
-- **Demo potential**: Visual, easy to understand, works end-to-end
+---
+
+## Design System
+
+The frontend uses a **neobrutalist** aesthetic — intentionally bold and raw.
+
+| Element | Value |
+|---------|-------|
+| **Yellow** | `#F7E733` — primary accent |
+| **Pink** | `#FF70A6` — reject / danger |
+| **Green** | `#00FFA3` — accept / success |
+| **Blue** | `#4D90FE` — info / links |
+| **Borders** | 2-4px solid black, sharp corners |
+| **Shadows** | 4px offset, solid black |
+| **Typography** | `font-black` (900), uppercase, tight tracking |
+
+---
+
+## Cost
+
+Gemini Flash is extremely cheap for this use case:
+
+| Operation | Cost |
+|-----------|------|
+| Source 25 candidates | ~$0.0005 |
+| Match all candidates | ~$0.0003 |
+| Generate one pitch | ~$0.0001 |
+| **Full pipeline per job** | **~$0.001** |
+
+With $1 you can run ~1,000 complete pipeline executions.
+
+---
+
+## Project Structure
+
+```
+backend/
+  main.py             FastAPI app, routes, SSE endpoint, background pipeline
+  agents.py           4 agent classes with Gemini structured output calls
+  database.py         SQLite CRUD operations
+  models.py           Pydantic request/response schemas
+  schema.sql          Table definitions
+
+frontend-neo/src/     Neobrutalist UI (primary frontend)
+  App.jsx             Root with neo styling
+  context/AppContext.jsx   Global state via React Context
+  components/
+    JobForm.jsx            Job creation form
+    CandidateCard.jsx      Profile display with LinkedIn links
+    CandidateSwiper.jsx    Main swipe review interface
+    CandidateListModal.jsx Filterable candidate list by status
+    StatsPanel.jsx         Clickable stats with modal drill-down
+    SwipeControls.jsx      Accept/reject buttons
+    PitchModal.jsx         Generated email preview
+```
+
+---
+
+## Built At
+
+**Granola x DeepMind Hackathon** — built from scratch in approximately 2 hours.
+
+The goal was to demonstrate that genuine multi-agent AI systems do not require heavyweight frameworks. Four simple agents with focused prompts, structured outputs, and sequential orchestration can deliver a complete, functional product.
