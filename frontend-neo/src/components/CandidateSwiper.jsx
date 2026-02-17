@@ -232,9 +232,9 @@ const CandidateSwiper = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen max-h-screen overflow-hidden">
-      {/* Stats Panel with Dropdown - Fixed */}
-      <div className="shrink-0 w-full flex justify-center px-4 pt-2">
+    <div className="flex flex-col gap-3">
+      {/* Stats Panel */}
+      <div className="w-full flex justify-center">
         <StatsPanel
           stats={stats}
           expandedStatus={expandedStatus}
@@ -244,39 +244,39 @@ const CandidateSwiper = () => {
         />
       </div>
 
-      {/* Candidate Card Area - Flexible with scroll */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 flex flex-col items-center justify-center">
-        {/* Source More Button */}
-        {stats.pending < 5 && (
+      {/* Source More Button */}
+      {stats.pending < 5 && (
+        <div className="flex justify-center">
           <button
             onClick={handleSourceMore}
             disabled={sourcing || loading}
-            className="mb-2 bg-neo-blue text-black font-black py-1.5 px-4 border-3 border-black shadow-neo hover:border-blue-700 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all disabled:bg-gray-400 uppercase text-[10px]"
+            className="bg-neo-blue text-black font-black py-1.5 px-4 border-3 border-black shadow-neo hover:border-blue-700 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all disabled:bg-gray-400 uppercase text-[10px]"
           >
             {sourcing ? 'Sourcing...' : '⚡ Source 25 More'}
           </button>
-        )}
+        </div>
+      )}
 
-        <AnimatePresence custom={exitDirection} mode="wait">
-          <motion.div
-            key={currentCandidate.candidate.id}
-            custom={exitDirection}
-            variants={variants}
-            initial="initial"
-            animate="enter"
-            exit="exit"
-            className="w-full max-w-5xl flex justify-center"
-          >
-            <CandidateCard
-              candidate={currentCandidate.candidate}
-              match={currentCandidate.match}
-            />
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {/* Candidate Card */}
+      <AnimatePresence custom={exitDirection} mode="wait">
+        <motion.div
+          key={currentCandidate.candidate.id}
+          custom={exitDirection}
+          variants={variants}
+          initial="initial"
+          animate="enter"
+          exit="exit"
+          className="w-full"
+        >
+          <CandidateCard
+            candidate={currentCandidate.candidate}
+            match={currentCandidate.match}
+          />
+        </motion.div>
+      </AnimatePresence>
 
-      {/* Swipe Controls - Fixed */}
-      <div className="shrink-0 pb-2">
+      {/* Swipe Controls */}
+      <div>
         <SwipeControls
           onReject={handleReject}
           onAccept={handleAccept}
