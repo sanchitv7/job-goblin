@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: recruiter-api
+    name: job-goblin-api
     runtime: python
     rootDir: backend
     buildCommand: pip install uv && uv sync
